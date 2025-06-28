@@ -268,6 +268,66 @@ export default function VideoEditor() {
     }
   }
 
+  const handleVideoExtractRange = async (extractStart: number, extractEnd: number) => {
+    if (!currentVideo) return
+    
+    setIsProcessing(true)
+    try {
+      // Convert video URL to blob for upload
+      const response = await fetch(currentVideo.url)
+      const videoBlob = await response.blob()
+
+      // Create form data for upload
+      const formData = new FormData()
+      formData.append('video', videoBlob, currentVideo.name)
+      formData.append('extractStart', extractStart.toString())
+      formData.append('extractEnd', extractEnd.toString())
+
+      // Upload and process video
+      const processResponse = await fetch('/api/video/extract-range', {
+        method: 'POST',
+        body: formData
+      })
+
+      if (!processResponse.ok) {
+        const errorData = await processResponse.json().catch(() => ({}))
+        throw new Error(errorData.error || 'Failed to extract range from video')
+      }
+
+      const result = await processResponse.json()
+      
+      // Create blob from base64 data
+      const binaryString = atob(result.video.data)
+      const bytes = new Uint8Array(binaryString.length)
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i)
+      }
+      const extractedBlob = new Blob([bytes], { type: 'video/webm' })
+      
+      // Create new video object
+      const newVideo: VideoFile = {
+        id: Date.now().toString(),
+        name: result.video.name,
+        url: URL.createObjectURL(extractedBlob),
+        duration: result.video.duration,
+        size: result.video.size,
+        createdAt: new Date()
+      }
+      
+      // Add new video to the list
+      setVideos(prev => [newVideo, ...prev])
+      
+      // Select the new video
+      setCurrentVideo(newVideo)
+      
+    } catch (error) {
+      console.error('Error extracting range from video:', error)
+      alert(`Error extracting range from video: ${error instanceof Error ? error.message : 'Please try again.'}`)
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -344,6 +404,7 @@ export default function VideoEditor() {
                     showTrimMarkers={true}
                     onSplit={handleVideoSplit}
                     onDeleteRange={handleDeleteRange}
+                    onExtractRange={handleVideoExtractRange}
                   />
                 </div>
                 <div className="bg-white rounded-xl shadow-sm p-6">

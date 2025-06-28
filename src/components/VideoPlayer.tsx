@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { Play, Pause, Volume2, VolumeX, SkipBack, SkipForward, Scissors, Trash2, Square } from 'lucide-react'
+import { Play, Pause, Volume2, VolumeX, SkipBack, SkipForward, Scissors, Trash2, Square, X, MinusCircle, Split, Zap, Target } from 'lucide-react'
 
 interface VideoFile {
   id: string
@@ -21,6 +21,7 @@ interface VideoPlayerProps {
   showTrimMarkers?: boolean
   onSplit?: (splitTime: number) => void
   onDeleteRange?: (deleteStart: number, deleteEnd: number) => void
+  onExtractRange?: (extractStart: number, extractEnd: number) => void
 }
 
 export default function VideoPlayer({ 
@@ -31,7 +32,8 @@ export default function VideoPlayer({
   onDurationChange,
   showTrimMarkers = false,
   onSplit,
-  onDeleteRange
+  onDeleteRange,
+  onExtractRange
 }: VideoPlayerProps) {
   const [isPlaying, setIsPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
@@ -42,6 +44,9 @@ export default function VideoPlayer({
   const [deleteRangeStart, setDeleteRangeStart] = useState<number | null>(null)
   const [deleteRangeEnd, setDeleteRangeEnd] = useState<number | null>(null)
   const [isSelectingDeleteRange, setIsSelectingDeleteRange] = useState(false)
+  const [extractRangeStart, setExtractRangeStart] = useState<number | null>(null)
+  const [extractRangeEnd, setExtractRangeEnd] = useState<number | null>(null)
+  const [isSelectingExtractRange, setIsSelectingExtractRange] = useState(false)
   
   const videoRef = useRef<HTMLVideoElement>(null)
   const progressRef = useRef<HTMLDivElement>(null)
@@ -124,13 +129,31 @@ export default function VideoPlayer({
         // Ensure the new time is finite and within valid range
         if (isFinite(newTime) && newTime >= 0 && newTime <= duration) {
           if (isSelectingDeleteRange) {
-            // If selecting delete range, set the end point
-            setDeleteRangeEnd(newTime)
-            setIsSelectingDeleteRange(false)
+            if (deleteRangeStart === null) {
+              // First click during delete selection - set start point
+              setDeleteRangeStart(newTime)
+            } else {
+              // Second click during delete selection - set end point
+              setDeleteRangeEnd(newTime)
+              setIsSelectingDeleteRange(false)
+            }
+          } else if (isSelectingExtractRange) {
+            if (extractRangeStart === null) {
+              // First click during extract selection - set start point
+              setExtractRangeStart(newTime)
+            } else {
+              // Second click during extract selection - set end point
+              setExtractRangeEnd(newTime)
+              setIsSelectingExtractRange(false)
+            }
           } else if (deleteRangeStart === null && onDeleteRange) {
             // If no range is selected and delete range is available, start selection
             setDeleteRangeStart(newTime)
             setIsSelectingDeleteRange(true)
+          } else if (extractRangeStart === null && onExtractRange) {
+            // If no extract range is selected and extract range is available, start selection
+            setExtractRangeStart(newTime)
+            setIsSelectingExtractRange(true)
           } else {
             // Normal seek behavior
             videoRef.current.currentTime = newTime
@@ -177,8 +200,9 @@ export default function VideoPlayer({
   }
 
   const handleSplit = () => {
-    if (onSplit && isFinite(currentTime) && currentTime > 0 && currentTime < duration) {
-      onSplit(currentTime)
+    if (onSplit && isFinite(duration) && duration > 0) {
+      const middlePoint = duration / 2
+      onSplit(middlePoint)
     }
   }
 
@@ -211,6 +235,23 @@ export default function VideoPlayer({
       if (start < end && start >= 0 && end <= duration) {
         onDeleteRange(start, end)
         clearDeleteRange()
+      }
+    }
+  }
+
+  const clearExtractRange = () => {
+    setExtractRangeStart(null)
+    setExtractRangeEnd(null)
+    setIsSelectingExtractRange(false)
+  }
+
+  const executeExtractRange = () => {
+    if (onExtractRange && extractRangeStart !== null && extractRangeEnd !== null) {
+      const start = Math.min(extractRangeStart, extractRangeEnd)
+      const end = Math.max(extractRangeStart, extractRangeEnd)
+      if (start < end && start >= 0 && end <= duration) {
+        onExtractRange(start, end)
+        clearExtractRange()
       }
     }
   }
@@ -251,6 +292,18 @@ export default function VideoPlayer({
 
   const hasValidDeleteRange = deleteRangeStart !== null && deleteRangeEnd !== null && 
     Math.abs(deleteRangeEnd - deleteRangeStart) > 0.1
+
+  // Calculate extract range positions
+  const extractStartPercentage = duration > 0 && extractRangeStart !== null
+    ? Math.min(100, Math.max(0, (extractRangeStart / duration) * 100))
+    : 0
+  
+  const extractEndPercentage = duration > 0 && extractRangeEnd !== null
+    ? Math.min(100, Math.max(0, (extractRangeEnd / duration) * 100))
+    : (isSelectingExtractRange && duration > 0 ? Math.min(100, Math.max(0, (currentTime / duration) * 100)) : 0)
+
+  const hasValidExtractRange = extractRangeStart !== null && extractRangeEnd !== null && 
+    Math.abs(extractRangeEnd - extractRangeStart) > 0.1
 
   return (
     <div className="space-y-4">
@@ -301,6 +354,18 @@ export default function VideoPlayer({
             </span>
           </div>
         )}
+
+        {/* Extract Range Mode Indicator */}
+        {(isSelectingExtractRange || hasValidExtractRange) && (
+          <div className="absolute top-4 right-4 bg-green-600 bg-opacity-90 text-white px-3 py-2 rounded-lg flex items-center space-x-2 border border-green-400">
+            <Zap className="w-4 h-4" />
+            <span className="text-sm font-medium">
+              {isSelectingExtractRange && extractRangeStart === null && 'Click to set start point'}
+              {isSelectingExtractRange && extractRangeStart !== null && 'Click to set end point'}
+              {hasValidExtractRange && 'Range selected for extraction'}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Controls */}
@@ -335,6 +400,23 @@ export default function VideoPlayer({
                 {hasValidDeleteRange && (
                   <div className="absolute inset-0 bg-gradient-to-r from-red-500 to-red-600 rounded-full opacity-90 flex items-center justify-center">
                     <span className="text-white text-xs font-bold">DELETE</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Extract range highlight */}
+            {(extractRangeStart !== null || isSelectingExtractRange) && (
+              <div
+                className="absolute top-0 h-full bg-green-400 rounded-full opacity-80 border-2 border-green-600"
+                style={{
+                  left: `${Math.min(extractStartPercentage, extractEndPercentage)}%`,
+                  width: `${Math.abs(extractEndPercentage - extractStartPercentage)}%`
+                }}
+              >
+                {hasValidExtractRange && (
+                  <div className="absolute inset-0 bg-gradient-to-r from-green-500 to-green-600 rounded-full opacity-90 flex items-center justify-center">
+                    <span className="text-white text-xs font-bold">EXTRACT</span>
                   </div>
                 )}
               </div>
@@ -389,6 +471,32 @@ export default function VideoPlayer({
                 <div className="absolute -top-2 -left-1 w-4 h-4 bg-red-400 rounded-full shadow-lg border-2 border-white animate-pulse"></div>
               </div>
             )}
+
+            {/* Extract range markers */}
+            {extractRangeStart !== null && (
+              <div
+                className="absolute top-0 w-2 h-full bg-green-600 rounded-full shadow-lg"
+                style={{ left: `${extractStartPercentage}%`, marginLeft: '-1px' }}
+              >
+                <div className="absolute -top-2 -left-1 w-4 h-4 bg-green-600 rounded-full shadow-lg border-2 border-white"></div>
+              </div>
+            )}
+            {extractRangeEnd !== null && (
+              <div
+                className="absolute top-0 w-2 h-full bg-green-600 rounded-full shadow-lg"
+                style={{ left: `${extractEndPercentage}%`, marginLeft: '-1px' }}
+              >
+                <div className="absolute -top-2 -left-1 w-4 h-4 bg-green-600 rounded-full shadow-lg border-2 border-white"></div>
+              </div>
+            )}
+            {isSelectingExtractRange && extractRangeStart !== null && (
+              <div
+                className="absolute top-0 w-2 h-full bg-green-400 rounded-full shadow-lg animate-pulse"
+                style={{ left: `${Math.min(100, Math.max(0, (currentTime / duration) * 100))}%`, marginLeft: '-1px' }}
+              >
+                <div className="absolute -top-2 -left-1 w-4 h-4 bg-green-400 rounded-full shadow-lg border-2 border-white animate-pulse"></div>
+              </div>
+            )}
             
             {/* Current time handle */}
             <div
@@ -405,17 +513,37 @@ export default function VideoPlayer({
             <div className="flex-1 text-center">
               {isSelectingDeleteRange && deleteRangeStart === null && (
                 <span className="text-red-600 font-medium animate-pulse">
-                  🔴 Click timeline to set start point
+                  🔴 Click timeline to set DELETE start point
                 </span>
               )}
               {isSelectingDeleteRange && deleteRangeStart !== null && (
                 <span className="text-red-600 font-medium animate-pulse">
-                  🔴 Click timeline to set end point
+                  🔴 Click timeline to set DELETE end point
                 </span>
               )}
               {hasValidDeleteRange && (
                 <span className="text-red-600 font-medium bg-red-50 px-2 py-1 rounded">
                   ✂️ Delete: {formatTime(Math.min(deleteRangeStart!, deleteRangeEnd!))} - {formatTime(Math.max(deleteRangeStart!, deleteRangeEnd!))}
+                </span>
+              )}
+              {isSelectingExtractRange && extractRangeStart === null && (
+                <span className="text-green-600 font-medium animate-pulse">
+                  🟢 Click timeline to set EXTRACT start point
+                </span>
+              )}
+              {isSelectingExtractRange && extractRangeStart !== null && (
+                <span className="text-green-600 font-medium animate-pulse">
+                  🟢 Click timeline to set EXTRACT end point
+                </span>
+              )}
+              {hasValidExtractRange && (
+                <span className="text-green-600 font-medium bg-green-50 px-2 py-1 rounded">
+                  📤 Extract: {formatTime(Math.min(extractRangeStart!, extractRangeEnd!))} - {formatTime(Math.max(extractRangeStart!, extractRangeEnd!))}
+                </span>
+              )}
+              {!isSelectingDeleteRange && !isSelectingExtractRange && !hasValidDeleteRange && !hasValidExtractRange && onDeleteRange && onExtractRange && (
+                <span className="text-gray-500 text-sm">
+                  Click timeline: 🔴 Set delete range | 🟢 Set extract range
                 </span>
               )}
             </div>
@@ -452,11 +580,12 @@ export default function VideoPlayer({
               {onSplit && (
                 <button
                   onClick={handleSplit}
-                  disabled={currentTime <= 0 || currentTime >= duration}
-                  className="p-2 text-gray-600 hover:text-orange-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  title="Split video at current time"
+                  disabled={!duration || duration <= 0}
+                  className="flex items-center space-x-1 px-3 py-2 text-white bg-orange-500 hover:bg-orange-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed rounded-lg shadow-md"
+                  title="Split video into two equal parts"
                 >
-                  <Scissors className="w-5 h-5" />
+                  <Split className="w-4 h-4" />
+                  <span className="text-sm font-medium">Split in Half</span>
                 </button>
               )}
             </div>
@@ -481,53 +610,108 @@ export default function VideoPlayer({
             </div>
           </div>
 
-          {/* Delete Range Controls */}
-          {onDeleteRange && (
-            <div className="flex items-center justify-center">
-              {!isSelectingDeleteRange && !hasValidDeleteRange && (
-                <button
-                  onClick={() => {
-                    setIsSelectingDeleteRange(true)
-                    setDeleteRangeStart(null)
-                    setDeleteRangeEnd(null)
-                  }}
-                  className="flex items-center space-x-2 px-4 py-2 text-gray-600 hover:text-red-600 hover:bg-red-50 transition-colors rounded-lg border border-gray-300"
-                  title="Click timeline to select range for deletion"
-                >
-                  <Square className="w-4 h-4" />
-                  <span className="text-sm font-medium">Select Range to Delete</span>
-                </button>
-              )}
-              {isSelectingDeleteRange && (
-                <button
-                  onClick={clearDeleteRange}
-                  className="flex items-center space-x-2 px-4 py-2 text-red-600 hover:text-red-700 hover:bg-red-50 transition-colors rounded-lg border border-red-300 animate-pulse"
-                  title="Cancel selection"
-                >
-                  <span className="text-sm font-medium">Cancel Selection</span>
-                </button>
-              )}
-              {hasValidDeleteRange && (
-                <div className="flex items-center space-x-3">
+          {/* Video Editing Tools Section */}
+          <div className="space-y-3 border-t pt-3">
+            {/* Delete Range Controls */}
+            {onDeleteRange && (
+              <div className="flex items-center justify-center">
+                {!isSelectingDeleteRange && !hasValidDeleteRange && (
                   <button
-                    onClick={executeDeleteRange}
-                    className="flex items-center space-x-2 px-4 py-2 text-white bg-red-500 hover:bg-red-600 transition-colors rounded-lg shadow-lg"
-                    title="Delete selected range"
+                    onClick={() => {
+                      setIsSelectingDeleteRange(true)
+                      setDeleteRangeStart(null)
+                      setDeleteRangeEnd(null)
+                    }}
+                    className="flex items-center space-x-2 px-4 py-2 text-gray-600 hover:text-red-600 hover:bg-red-50 transition-colors rounded-lg border border-gray-300"
+                    title="Click timeline to select range for deletion"
                   >
-                    <Trash2 className="w-4 h-4" />
-                    <span className="text-sm font-medium">Delete Selected Range</span>
+                    <Target className="w-4 h-4" />
+                    <span className="text-sm font-medium">Select Range to Delete</span>
                   </button>
+                )}
+                {isSelectingDeleteRange && (
                   <button
                     onClick={clearDeleteRange}
-                    className="flex items-center space-x-2 px-4 py-2 text-gray-600 hover:text-gray-700 hover:bg-gray-50 transition-colors rounded-lg border border-gray-300"
-                    title="Clear selection"
+                    className="flex items-center space-x-2 px-4 py-2 text-red-600 hover:text-red-700 hover:bg-red-50 transition-colors rounded-lg border border-red-300 animate-pulse"
+                    title="Cancel selection"
                   >
-                    <span className="text-sm">Clear</span>
+                    <X className="w-4 h-4" />
+                    <span className="text-sm font-medium">Cancel Selection</span>
                   </button>
-                </div>
-              )}
-            </div>
-          )}
+                )}
+                {hasValidDeleteRange && (
+                  <div className="flex items-center space-x-3">
+                    <button
+                      onClick={executeDeleteRange}
+                      className="flex items-center space-x-2 px-4 py-2 text-white bg-red-500 hover:bg-red-600 transition-colors rounded-lg shadow-lg"
+                      title="Delete selected range"
+                    >
+                      <MinusCircle className="w-4 h-4" />
+                      <span className="text-sm font-medium">Delete Selected Range</span>
+                    </button>
+                    <button
+                      onClick={clearDeleteRange}
+                      className="flex items-center space-x-2 px-4 py-2 text-gray-600 hover:text-gray-700 hover:bg-gray-50 transition-colors rounded-lg border border-gray-300"
+                      title="Clear selection"
+                    >
+                      <X className="w-4 h-4" />
+                      <span className="text-sm">Clear</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Extract Range Controls */}
+            {onExtractRange && (
+              <div className="flex items-center justify-center">
+                {!isSelectingExtractRange && !hasValidExtractRange && (
+                  <button
+                    onClick={() => {
+                      setIsSelectingExtractRange(true)
+                      setExtractRangeStart(null)
+                      setExtractRangeEnd(null)
+                    }}
+                    className="flex items-center space-x-2 px-4 py-2 text-gray-600 hover:text-green-600 hover:bg-green-50 transition-colors rounded-lg border border-gray-300"
+                    title="Click timeline to select range for extraction"
+                  >
+                    <Zap className="w-4 h-4" />
+                    <span className="text-sm font-medium">Select Range to Extract</span>
+                  </button>
+                )}
+                {isSelectingExtractRange && (
+                  <button
+                    onClick={clearExtractRange}
+                    className="flex items-center space-x-2 px-4 py-2 text-green-600 hover:text-green-700 hover:bg-green-50 transition-colors rounded-lg border border-green-300 animate-pulse"
+                    title="Cancel selection"
+                  >
+                    <X className="w-4 h-4" />
+                    <span className="text-sm font-medium">Cancel Selection</span>
+                  </button>
+                )}
+                {hasValidExtractRange && (
+                  <div className="flex items-center space-x-3">
+                    <button
+                      onClick={executeExtractRange}
+                      className="flex items-center space-x-2 px-4 py-2 text-white bg-green-500 hover:bg-green-600 transition-colors rounded-lg shadow-lg"
+                      title="Extract selected range as new video"
+                    >
+                      <Zap className="w-4 h-4" />
+                      <span className="text-sm font-medium">Extract Selected Range</span>
+                    </button>
+                    <button
+                      onClick={clearExtractRange}
+                      className="flex items-center space-x-2 px-4 py-2 text-gray-600 hover:text-gray-700 hover:bg-gray-50 transition-colors rounded-lg border border-gray-300"
+                      title="Clear selection"
+                    >
+                      <X className="w-4 h-4" />
+                      <span className="text-sm">Clear</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Trim Navigation (when trim markers are shown) */}
