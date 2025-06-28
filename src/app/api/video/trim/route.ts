@@ -38,14 +38,14 @@ export async function POST(request: NextRequest) {
     inputPath = join(tempDir, `input_${timestamp}.${fileExtension}`)
     outputPath = join(tempDir, `output_${timestamp}.mp4`)
 
-    // Write uploaded file to temporary location
+    
     const bytes = await file.arrayBuffer()
     const buffer = Buffer.from(bytes)
     await writeFile(inputPath, buffer)
 
     console.log(`Input file written: ${inputPath} (${buffer.length} bytes)`)
 
-    // Verify input file exists
+    
     try {
       await access(inputPath)
     } catch (error) {

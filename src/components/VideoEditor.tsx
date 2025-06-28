@@ -135,6 +135,139 @@ export default function VideoEditor() {
     setTrimEnd(end)
   }
 
+  const handleVideoSplit = async (splitTime: number) => {
+    if (!currentVideo) return
+    
+    setIsProcessing(true)
+    try {
+      // Convert video URL to blob for upload
+      const response = await fetch(currentVideo.url)
+      const videoBlob = await response.blob()
+
+      // Create form data for upload
+      const formData = new FormData()
+      formData.append('video', videoBlob, currentVideo.name)
+      formData.append('splitTime', splitTime.toString())
+
+      // Upload and process video
+      const processResponse = await fetch('/api/video/split', {
+        method: 'POST',
+        body: formData
+      })
+
+      if (!processResponse.ok) {
+        throw new Error('Failed to split video')
+      }
+
+      const result = await processResponse.json()
+      
+      // Create blobs from base64 data
+      const binaryString1 = atob(result.part1.data)
+      const bytes1 = new Uint8Array(binaryString1.length)
+      for (let i = 0; i < binaryString1.length; i++) {
+        bytes1[i] = binaryString1.charCodeAt(i)
+      }
+      const blob1 = new Blob([bytes1], { type: 'video/mp4' })
+      
+      const binaryString2 = atob(result.part2.data)
+      const bytes2 = new Uint8Array(binaryString2.length)
+      for (let i = 0; i < binaryString2.length; i++) {
+        bytes2[i] = binaryString2.charCodeAt(i)
+      }
+      const blob2 = new Blob([bytes2], { type: 'video/mp4' })
+      
+      // Create new video objects
+      const video1: VideoFile = {
+        id: Date.now().toString(),
+        name: result.part1.filename,
+        url: URL.createObjectURL(blob1),
+        duration: 0,
+        size: result.part1.size,
+        createdAt: new Date()
+      }
+      
+      const video2: VideoFile = {
+        id: (Date.now() + 1).toString(),
+        name: result.part2.filename,
+        url: URL.createObjectURL(blob2),
+        duration: 0,
+        size: result.part2.size,
+        createdAt: new Date()
+      }
+      
+      // Add both videos to the list
+      setVideos(prev => [video1, video2, ...prev])
+      
+      // Select the first part
+      setCurrentVideo(video1)
+      
+    } catch (error) {
+      console.error('Error splitting video:', error)
+      alert('Error splitting video. Please try again.')
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
+  const handleDeleteRange = async (deleteStart: number, deleteEnd: number) => {
+    if (!currentVideo) return
+    
+    setIsProcessing(true)
+    try {
+      // Convert video URL to blob for upload
+      const response = await fetch(currentVideo.url)
+      const videoBlob = await response.blob()
+
+      // Create form data for upload
+      const formData = new FormData()
+      formData.append('video', videoBlob, currentVideo.name)
+      formData.append('deleteStart', deleteStart.toString())
+      formData.append('deleteEnd', deleteEnd.toString())
+
+      // Upload and process video
+      const processResponse = await fetch('/api/video/delete-range', {
+        method: 'POST',
+        body: formData
+      })
+
+      if (!processResponse.ok) {
+        const errorData = await processResponse.json().catch(() => ({}))
+        throw new Error(errorData.details || 'Failed to delete range from video')
+      }
+
+      // Get processed video
+      const processedBlob = await processResponse.blob()
+      
+      if (!processedBlob || processedBlob.size === 0) {
+        throw new Error('Processed video is empty')
+      }
+
+      const filename = `${currentVideo.name.replace(/\.[^/.]+$/, '')}_edited.mp4`
+      
+      // Create new video object
+      const newVideo: VideoFile = {
+        id: Date.now().toString(),
+        name: filename,
+        url: URL.createObjectURL(processedBlob),
+        duration: 0,
+        size: processedBlob.size,
+        createdAt: new Date()
+      }
+      
+      // Add new video to the list
+      setVideos(prev => [newVideo, ...prev])
+      
+      // Select the new video
+      setCurrentVideo(newVideo)
+      
+    } catch (error) {
+      console.error('Error deleting range from video:', error)
+      alert(`Error deleting range from video: ${error instanceof Error ? error.message : 'Please try again.'}`)
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -209,6 +342,8 @@ export default function VideoEditor() {
                     onTimeUpdate={handleVideoTimeUpdate}
                     onDurationChange={handleVideoDurationChange}
                     showTrimMarkers={true}
+                    onSplit={handleVideoSplit}
+                    onDeleteRange={handleDeleteRange}
                   />
                 </div>
                 <div className="bg-white rounded-xl shadow-sm p-6">
