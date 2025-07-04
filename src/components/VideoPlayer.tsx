@@ -159,7 +159,7 @@ export default function VideoPlayer({
             videoRef.current.currentTime = newTime
           }
         }
-      }
+      } 
     }
   }
 
